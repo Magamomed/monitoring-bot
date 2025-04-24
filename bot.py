@@ -221,33 +221,56 @@ async def cmd_mute(message: Message):
     
 @dp.message(Command("kick"))
 async def cmd_kick(message: Message, command: CommandObject):
-    if message.chat.type == ChatType.PRIVATE:
-        return await message.answer("❗ Используйте /kick в группе.")
-
     member = await bot.get_chat_member(message.chat.id, message.from_user.id)
     if member.status not in ("administrator", "creator"):
-        return await message.answer("⚠️ Только админы.")
+        return await message.answer("❗ Только админ может кикать.")
 
     target = None
-
-    # reply
     if message.reply_to_message:
         target = message.reply_to_message.from_user
-
-    # @username
     elif command.args:
         username = command.args.strip().lstrip("@")
-        try:
-            chat_member = await bot.get_chat_member(message.chat.id, username)
-            target = chat_member.user
-        except Exception:
-            return await message.answer("❗ Не удалось найти пользователя. Возможно, он не писал в чат.")
+        async for chat_member in bot.get_chat_administrators(message.chat.id):
+            if chat_member.user.username and chat_member.user.username.lower() == username.lower():
+                target = chat_member.user
+                break
 
     if not target:
-        return await message.answer("❗ Укажите пользователя ответом или через @username.")
+        return await message.answer("❗ Укажите пользователя через @username или ответом.")
 
-    await bot.ban_chat_member(message.chat.id, target.id)
-    await message.answer(f"🚫 {target.full_name} был исключён.")
+    try:
+        await bot.ban_chat_member(message.chat.id, target.id)
+        await bot.unban_chat_member(message.chat.id, target.id)  # 👈 чтобы можно было вернуться
+        await message.answer(f"👢 {target.full_name} был исключён.")
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось кикнуть: {e}")
+
+
+@dp.message(Command("ban"))
+async def cmd_ban(message: Message, command: CommandObject):
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await message.answer("❗ Только админ может банить.")
+
+    target = None
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+    elif command.args:
+        username = command.args.strip().lstrip("@")
+        async for chat_member in bot.get_chat_administrators(message.chat.id):
+            if chat_member.user.username and chat_member.user.username.lower() == username.lower():
+                target = chat_member.user
+                break
+
+    if not target:
+        return await message.answer("❗ Укажите пользователя через @username или ответом.")
+
+    try:
+        await bot.ban_chat_member(message.chat.id, target.id)
+        await message.answer(f"🔨 {target.full_name} получил пермач бан.")
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось забанить: {e}")
+
 
 @dp.message(Command("ping"))
 async def cmd_ping(message: Message):

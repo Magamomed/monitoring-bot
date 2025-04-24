@@ -29,6 +29,7 @@ STOP_WORDS = [
 ]
 DB_PATH = 'warnings.db'
 STOPWORDS_PATH = 'stopwords.txt'
+PAUSED = False
 
 
 # ─── ХРАНЕНИЕ СТОП-СЛОВ ──────────────────────────────────────────────────
@@ -126,6 +127,32 @@ async def reset_warnings(user_id: int):
         await db.commit()
 
 # ─── КОМАНДЫ ─────────────────────────────────────────────────────────────
+@dp.message(F.text)
+async def pause_guard(message: Message):
+    if PAUSED:
+        return  # просто молчит, не обрабатывает сообщение дальше
+
+@dp.message(Command("pause"))
+async def cmd_pause(message: Message):
+    global PAUSED
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await message.answer("❗ Только админ может приостановить бота.")
+    
+    PAUSED = True
+    await message.answer("🤖 Бот ушёл перекусить. Не шалите тут без меня!")
+
+@dp.message(Command("resume"))
+async def cmd_resume(message: Message):
+    global PAUSED
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await message.answer("❗ Только админ может вернуть бота.")
+
+    PAUSED = False
+    await message.answer("✅ Я снова в деле! Порядок в чате под контролем.")
+
+
 @dp.message(Command("getid"))
 async def cmd_getid(message: Message):
     await message.answer(f"🆔 Chat ID: <code>{message.chat.id}</code>", parse_mode="HTML")
@@ -338,11 +365,11 @@ async def cmd_unmute(message: Message):
 
     target = None
 
-    # reply
+
     if message.reply_to_message:
         target = message.reply_to_message.from_user
 
-    # @username
+    
     elif message.text:
         args = message.text.split(maxsplit=1)
         if len(args) > 1:
@@ -446,10 +473,17 @@ async def filter_and_warn(message: Message):
 
 # ─── СТАРТ БОТА ─────────────────────────────────────────────────────────
 async def main():
-    await init_db()
-    logging.basicConfig(level=logging.INFO)
-    logging.info("🚀 Бот запущен, БД инициализирована")
-    await dp.start_polling(bot)
+    try:
+        await init_db()
+        logging.basicConfig(level=logging.INFO)
+        logging.info("🚀 Бот запущен, БД инициализирована")
+        await dp.start_polling(bot)
+    except Exception as e:
+        logging.error(f"❌ Бот аварийно остановлен: {e}")
+        # Если бот в группе — сообщим туда
+        await bot.send_message(-1002667337596, "⚠️ Ухожу по техническим причинам. Не балуйтесь! Скоро вернусь!")
+        raise e
+
 
 if __name__ == "__main__":
     asyncio.run(main())

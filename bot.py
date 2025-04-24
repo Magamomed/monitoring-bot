@@ -193,45 +193,62 @@ async def cmd_mute(message: Message):
         return await message.answer("⚠️ Только админы могут мутить пользователей.")
 
     target = None
-    args = message.text.split(maxsplit=1)
 
+    # reply
     if message.reply_to_message:
         target = message.reply_to_message.from_user
-    elif len(args) > 1:
-        username = args[1].lstrip("@")
-        try:
-            chat_member = await bot.get_chat_member(message.chat.id, username)
-            target = chat_member.user
-        except Exception:
-            return await message.answer("❗ Не удалось найти пользователя по нику.")
+
+    # @username
+    elif message.text:
+        args = message.text.split(maxsplit=1)
+        if len(args) > 1:
+            username = args[1].lstrip("@")
+            try:
+                chat_member = await bot.get_chat_member(message.chat.id, username)
+                target = chat_member.user
+            except Exception:
+                return await message.answer("❗ Не удалось найти пользователя. Возможно, он не писал в чат.")
 
     if not target:
-        return await message.answer("❗ Укажите пользователя через @username или ответом.")
+        return await message.answer("❗ Укажите пользователя ответом или через @username.")
 
     await bot.restrict_chat_member(
         message.chat.id, target.id,
         permissions=ChatPermissions(can_send_messages=False)
     )
     await message.answer(f"🔇 {target.full_name} замучен.")
+
     
 @dp.message(Command("kick"))
 async def cmd_kick(message: Message, command: CommandObject):
+    if message.chat.type == ChatType.PRIVATE:
+        return await message.answer("❗ Используйте /kick в группе.")
+
     member = await bot.get_chat_member(message.chat.id, message.from_user.id)
     if member.status not in ("administrator", "creator"):
-        return await message.answer("Только админ.")
+        return await message.answer("⚠️ Только админы.")
+
     target = None
+
+    # reply
     if message.reply_to_message:
         target = message.reply_to_message.from_user
+
+    # @username
     elif command.args:
         username = command.args.strip().lstrip("@")
-        async for u in bot.get_chat_members(message.chat.id):
-            if u.user.username == username:
-                target = u.user
-                break
-    if target:
-        await bot.ban_chat_member(message.chat.id, target.id)
-        await message.answer(f"🚫 {target.full_name} был исключён.")
-    
+        try:
+            chat_member = await bot.get_chat_member(message.chat.id, username)
+            target = chat_member.user
+        except Exception:
+            return await message.answer("❗ Не удалось найти пользователя. Возможно, он не писал в чат.")
+
+    if not target:
+        return await message.answer("❗ Укажите пользователя ответом или через @username.")
+
+    await bot.ban_chat_member(message.chat.id, target.id)
+    await message.answer(f"🚫 {target.full_name} был исключён.")
+
 @dp.message(Command("ping"))
 async def cmd_ping(message: Message):
     await message.answer("Pong! 🤖")
@@ -291,26 +308,31 @@ async def cmd_unmute(message: Message):
         return await message.answer("⚠️ Только админы.")
 
     target = None
-    args = message.text.split(maxsplit=1)
 
+    # reply
     if message.reply_to_message:
         target = message.reply_to_message.from_user
-    elif len(args) > 1:
-        username = args[1].lstrip("@")
-        try:
-            chat_member = await bot.get_chat_member(message.chat.id, username)
-            target = chat_member.user
-        except Exception:
-            return await message.answer("❗ Не удалось найти пользователя по нику.")
+
+    # @username
+    elif message.text:
+        args = message.text.split(maxsplit=1)
+        if len(args) > 1:
+            username = args[1].lstrip("@")
+            try:
+                chat_member = await bot.get_chat_member(message.chat.id, username)
+                target = chat_member.user
+            except Exception:
+                return await message.answer("❗ Не удалось найти пользователя. Возможно, он не писал в чат.")
 
     if not target:
-        return await message.answer("❗ Укажите пользователя через @username или ответом.")
+        return await message.answer("❗ Укажите пользователя ответом или через @username.")
 
     await bot.restrict_chat_member(
         message.chat.id, target.id,
         permissions=ChatPermissions(can_send_messages=True)
     )
     await message.answer(f"✅ {target.full_name} размучен.")
+
     
 @dp.message(Command("testcaptcha"))
 async def cmd_testcaptcha(message: Message):

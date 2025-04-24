@@ -30,6 +30,23 @@ STOP_WORDS = [
 DB_PATH = 'warnings.db'
 STOPWORDS_PATH = 'stopwords.txt'
 
+
+# ─── ХРАНЕНИЕ СТОП-СЛОВ ──────────────────────────────────────────────────
+def load_stopwords() -> list[str]:
+    if not os.path.exists(STOPWORDS_PATH):
+        return []
+    with open(STOPWORDS_PATH, 'r', encoding='utf-8') as f:
+        return [line.strip() for line in f if line.strip()]
+
+def save_stopwords(words: list[str]):
+    with open(STOPWORDS_PATH, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(sorted(set(words))))
+
+STOP_WORDS = load_stopwords()
+
+
+
+
 # ─── СТОРЕДЖИ ДЛЯ КАПЧ ───────────────────────────────────────────────────
 # pending_captcha[(chat_id,user_id)] = (answer:int, kind:str)
 # kind: "join" или "test"
@@ -75,22 +92,6 @@ async def schedule_auto_unmute_and_flag(chat_id: int, user_id: int):
         parse_mode="HTML"
     )
     
-    
-# ─── ХРАНЕНИЕ СТОП-СЛОВ ──────────────────────────────────────────────────
-def load_stopwords() -> list[str]:
-    if not os.path.exists(STOPWORDS_PATH):
-        return []
-    with open(STOPWORDS_PATH, 'r', encoding='utf-8') as f:
-        return [line.strip() for line in f if line.strip()]
-
-def save_stopwords(words: list[str]):
-    with open(STOPWORDS_PATH, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(sorted(set(words))))
-
-STOP_WORDS = load_stopwords()
-
-
-
 
 # ─── SQLITE: СИСТЕМА ВЫГОВОРОВ ───────────────────────────────────────────
 async def init_db():
@@ -128,27 +129,33 @@ async def reset_warnings(user_id: int):
 @dp.message(Command("addword"))
 async def add_word(message: Message, command: CommandObject):
     if message.chat.type != ChatType.PRIVATE:
-        return
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status not in ("administrator", "creator"):
+            return await message.answer("❗ Только админ может добавлять слова.")
     word = command.args.strip().lower()
+    if not word:
+        return await message.answer("❗ Укажите слово. Пример: /addword spam")
     STOP_WORDS.append(word)
     save_stopwords(STOP_WORDS)
     await message.answer(f"✅ Добавлено слово: {word}")
 
+
 @dp.message(Command("removeword"))
 async def remove_word(message: Message, command: CommandObject):
     if message.chat.type != ChatType.PRIVATE:
-        return
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status not in ("administrator", "creator"):
+            return await message.answer("❗ Только админ может удалять слова.")
     word = command.args.strip().lower()
+    if not word:
+        return await message.answer("❗ Укажите слово. Пример: /removeword spam")
     if word in STOP_WORDS:
         STOP_WORDS.remove(word)
         save_stopwords(STOP_WORDS)
         await message.answer(f"❌ Удалено слово: {word}")
     else:
         await message.answer(f"⚠️ Слово не найдено: {word}")
-        
+      
         
 @dp.message(Command("helpadmin"))
 async def cmd_helpadmin(message: Message):

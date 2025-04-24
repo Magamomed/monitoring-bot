@@ -21,6 +21,12 @@ if not API_TOKEN:
 bot = Bot(token=API_TOKEN)
 dp  = Dispatcher()
 
+@dp.message(F.text)
+async def pause_guard(message: Message):
+    if PAUSED and not message.text.startswith("/resume"):
+        return  # не делаем ничего — блокируем всё остальное
+
+
 # ─── ПАРАМЕТРЫ ───────────────────────────────────────────────────────────
 STOP_WORDS = [
     'заработок', 'подробности в лс', 'гандон', 'работа мечты',
@@ -127,11 +133,6 @@ async def reset_warnings(user_id: int):
         await db.commit()
 
 # ─── КОМАНДЫ ─────────────────────────────────────────────────────────────
-@dp.message(F.text)
-async def pause_guard(message: Message):
-    if PAUSED:
-        return  # просто молчит, не обрабатывает сообщение дальше
-
 @dp.message(Command("pause"))
 async def cmd_pause(message: Message):
     global PAUSED

@@ -126,6 +126,11 @@ async def reset_warnings(user_id: int):
         await db.commit()
 
 # ─── КОМАНДЫ ─────────────────────────────────────────────────────────────
+@dp.message(Command("getid"))
+async def cmd_getid(message: Message):
+    await message.answer(f"🆔 Chat ID: <code>{message.chat.id}</code>", parse_mode="HTML")
+
+
 @dp.message(Command("addword"))
 async def add_word(message: Message, command: CommandObject):
     if message.chat.type != ChatType.PRIVATE:

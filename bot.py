@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import aiosqlite
 
 from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import Command
+from aiogram.filters import Command , CommandObject
 from aiogram.enums import ChatType
 from aiogram.types import ChatPermissions, Message
 
@@ -28,6 +28,7 @@ STOP_WORDS = [
     'пизду', 'иди нахуй', 'нахуй', 'сука', 'пидарас', 'еблан', 'Нюхать пизду', 'ебалан',
 ]
 DB_PATH = 'warnings.db'
+STOPWORDS_PATH = 'stopwords.txt'
 
 # ─── СТОРЕДЖИ ДЛЯ КАПЧ ───────────────────────────────────────────────────
 # pending_captcha[(chat_id,user_id)] = (answer:int, kind:str)
@@ -73,6 +74,23 @@ async def schedule_auto_unmute_and_flag(chat_id: int, user_id: int):
         f"<a href=\"tg://user?id={user_id}\">{user_id}</a>, прежде чем писать, решите капчу!",
         parse_mode="HTML"
     )
+    
+    
+# ─── ХРАНЕНИЕ СТОП-СЛОВ ──────────────────────────────────────────────────
+def load_stopwords() -> list[str]:
+    if not os.path.exists(STOPWORDS_PATH):
+        return []
+    with open(STOPWORDS_PATH, 'r', encoding='utf-8') as f:
+        return [line.strip() for line in f if line.strip()]
+
+def save_stopwords(words: list[str]):
+    with open(STOPWORDS_PATH, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(sorted(set(words))))
+
+STOP_WORDS = load_stopwords()
+
+
+
 
 # ─── SQLITE: СИСТЕМА ВЫГОВОРОВ ───────────────────────────────────────────
 async def init_db():
@@ -107,6 +125,31 @@ async def reset_warnings(user_id: int):
         await db.commit()
 
 # ─── КОМАНДЫ ─────────────────────────────────────────────────────────────
+@dp.message(Command("addword"))
+async def add_word(message: Message, command: CommandObject):
+    if message.chat.type != ChatType.PRIVATE:
+        return
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return
+    word = command.args.strip().lower()
+    STOP_WORDS.append(word)
+    save_stopwords(STOP_WORDS)
+    await message.answer(f"✅ Добавлено слово: {word}")
+
+@dp.message(Command("removeword"))
+async def remove_word(message: Message, command: CommandObject):
+    if message.chat.type != ChatType.PRIVATE:
+        return
+    word = command.args.strip().lower()
+    if word in STOP_WORDS:
+        STOP_WORDS.remove(word)
+        save_stopwords(STOP_WORDS)
+        await message.answer(f"❌ Удалено слово: {word}")
+    else:
+        await message.answer(f"⚠️ Слово не найдено: {word}")
+        
+        
 @dp.message(Command("helpadmin"))
 async def cmd_helpadmin(message: Message):
     
@@ -132,29 +175,52 @@ async def cmd_helpadmin(message: Message):
 
 @dp.message(Command("mute"))
 async def cmd_mute(message: Message):
-    
     if message.chat.type == ChatType.PRIVATE:
-        return await message.answer("❗️ Используйте /mute в группе, ответив на сообщение.")
-    
+        return await message.answer("❗️ Используйте /mute в группе.")
+
     member = await bot.get_chat_member(message.chat.id, message.from_user.id)
     if member.status not in ("administrator", "creator"):
         return await message.answer("⚠️ Только админы могут мутить пользователей.")
-    
-    if not message.reply_to_message:
-        return await message.answer("❗️ Ответьте на сообщение и введите /mute.")
-    target = message.reply_to_message.from_user
-    
+
+    target = None
+    args = message.text.split(maxsplit=1)
+
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+    elif len(args) > 1:
+        username = args[1].lstrip("@")
+        try:
+            chat_member = await bot.get_chat_member(message.chat.id, username)
+            target = chat_member.user
+        except Exception:
+            return await message.answer("❗ Не удалось найти пользователя по нику.")
+
+    if not target:
+        return await message.answer("❗ Укажите пользователя через @username или ответом.")
+
     await bot.restrict_chat_member(
-        chat_id=message.chat.id,
-        user_id=target.id,
-        permissions=ChatPermissions(
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_other_messages=False,
-            can_add_web_page_previews=False
-        )
+        message.chat.id, target.id,
+        permissions=ChatPermissions(can_send_messages=False)
     )
-    await message.answer(f"🔇 Пользователь {target.full_name} замучен.")
+    await message.answer(f"🔇 {target.full_name} замучен.")
+    
+@dp.message(Command("kick"))
+async def cmd_kick(message: Message, command: CommandObject):
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await message.answer("Только админ.")
+    target = None
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+    elif command.args:
+        username = command.args.strip().lstrip("@")
+        async for u in bot.get_chat_members(message.chat.id):
+            if u.user.username == username:
+                target = u.user
+                break
+    if target:
+        await bot.ban_chat_member(message.chat.id, target.id)
+        await message.answer(f"🚫 {target.full_name} был исключён.")
     
 @dp.message(Command("ping"))
 async def cmd_ping(message: Message):
@@ -202,36 +268,40 @@ async def cmd_clearwarns(message: Message):
     target = message.reply_to_message.from_user
     await reset_warnings(target.id)
     await message.answer(f"✅ Выговоры {target.full_name} очищены.")
-    
+
+
+
 @dp.message(Command("unmute"))
 async def cmd_unmute(message: Message):
-    
     if message.chat.type == ChatType.PRIVATE:
-        return await message.answer("❗️ Используйте /unmute в группе, ответив на сообщение пользователя.")
+        return await message.answer("❗️ Используйте /unmute в группе.")
 
-    
     member = await bot.get_chat_member(message.chat.id, message.from_user.id)
     if member.status not in ("administrator", "creator"):
-        return await message.answer("⚠️ Только администраторы могут размутить пользователя.")
+        return await message.answer("⚠️ Только админы.")
 
-    
-    if not message.reply_to_message:
-        return await message.answer("❗️ Ответьте на сообщение того, кого хотите размутить, и введите /unmute.")
+    target = None
+    args = message.text.split(maxsplit=1)
 
-    target = message.reply_to_message.from_user
-    
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+    elif len(args) > 1:
+        username = args[1].lstrip("@")
+        try:
+            chat_member = await bot.get_chat_member(message.chat.id, username)
+            target = chat_member.user
+        except Exception:
+            return await message.answer("❗ Не удалось найти пользователя по нику.")
+
+    if not target:
+        return await message.answer("❗ Укажите пользователя через @username или ответом.")
+
     await bot.restrict_chat_member(
-        chat_id=message.chat.id,
-        user_id=target.id,
-        permissions=ChatPermissions(
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True
-        )
+        message.chat.id, target.id,
+        permissions=ChatPermissions(can_send_messages=True)
     )
-    await message.answer(f"✅ Пользователь {target.full_name} снова может писать.")
-
+    await message.answer(f"✅ {target.full_name} размучен.")
+    
 @dp.message(Command("testcaptcha"))
 async def cmd_testcaptcha(message: Message):
     chat_id, user_id = message.chat.id, message.from_user.id

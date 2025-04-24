@@ -11,6 +11,8 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command , CommandObject
 from aiogram.enums import ChatType
 from aiogram.types import ChatPermissions, Message
+from PauseMiddleware import PauseMiddleware
+
 
 # ─── ЗАГРУЗКА ТОКЕНА ─────────────────────────────────────────────────────
 load_dotenv()
@@ -467,23 +469,20 @@ async def filter_and_warn(message: Message):
         await bot.ban_chat_member(message.chat.id, user_id)
         await reset_warnings(user_id)
 
-# предохранитель остановки бота
-@dp.message(F.text)
-async def pause_guard(message: Message):
-    if PAUSED and not message.text.startswith("/resume"):
-        return
-
 
 # ─── СТАРТ БОТА ─────────────────────────────────────────────────────────
 async def main():
     try:
         await init_db()
         logging.basicConfig(level=logging.INFO)
+
+        # middleware, который молчит при паузе
+        dp.message.middleware(PauseMiddleware(lambda: PAUSED))
+
         logging.info("🚀 Бот запущен, БД инициализирована")
         await dp.start_polling(bot)
     except Exception as e:
         logging.error(f"❌ Бот аварийно остановлен: {e}")
-        # Если бот в группе — сообщим туда
         await bot.send_message(-1002667337596, "⚠️ Ухожу по техническим причинам. Не балуйтесь! Скоро вернусь!")
         raise e
 

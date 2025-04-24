@@ -169,6 +169,9 @@ async def cmd_helpadmin(message: Message):
         "/testcaptcha — запустить тест-капчу для любого\n"
         "/stoplist — показать стоп-слова\n"
         "/ping — проверить, что бот жив\n",
+        "/kick — удалить пользователя с беседы\n",
+        "/addword — добавить слово в стоп-лист\n",
+        "/removeword — удалить слово с стоп-листа\n",
         parse_mode="HTML"
     )
 

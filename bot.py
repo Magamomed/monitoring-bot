@@ -21,11 +21,6 @@ if not API_TOKEN:
 bot = Bot(token=API_TOKEN)
 dp  = Dispatcher()
 
-@dp.message(F.text)
-async def pause_guard(message: Message):
-    if PAUSED and not message.text.startswith("/resume"):
-        return  # не делаем ничего — блокируем всё остальное
-
 
 # ─── ПАРАМЕТРЫ ───────────────────────────────────────────────────────────
 STOP_WORDS = [
@@ -471,6 +466,13 @@ async def filter_and_warn(message: Message):
         await message.answer(f"🚫 {message.from_user.full_name}, 3/3 — исключаю.")
         await bot.ban_chat_member(message.chat.id, user_id)
         await reset_warnings(user_id)
+
+# предохранитель остановки бота
+@dp.message(F.text)
+async def pause_guard(message: Message):
+    if PAUSED and not message.text.startswith("/resume"):
+        return
+
 
 # ─── СТАРТ БОТА ─────────────────────────────────────────────────────────
 async def main():

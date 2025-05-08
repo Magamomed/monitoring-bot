@@ -10,9 +10,10 @@ import aiosqlite
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command , CommandObject
 from aiogram.enums import ChatType
-from aiogram.types import ChatPermissions, Message
-from PauseMiddleware import PauseMiddleware
+from aiogram.types import ChatPermissions, Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
+from PauseMiddleware import PauseMiddleware
+from datetime import datetime, timezone
 
 # ─── ЗАГРУЗКА ТОКЕНА ─────────────────────────────────────────────────────
 load_dotenv()
@@ -23,16 +24,28 @@ if not API_TOKEN:
 bot = Bot(token=API_TOKEN)
 dp  = Dispatcher()
 
+BOT_START_TIME = datetime.now(timezone.utc)
+
+
 
 # ─── ПАРАМЕТРЫ ───────────────────────────────────────────────────────────
-STOP_WORDS = [
-    'заработок', 'подробности в лс', 'гандон', 'работа мечты',
-    'быстрый доход', 'порно', 'гей', 'в лс', 'пишите +в л.с', 'пизда', 
-    'пизду', 'иди нахуй', 'нахуй', 'сука', 'пидарас', 'еблан', 'Нюхать пизду', 'ебалан',
-]
 DB_PATH = 'warnings.db'
 STOPWORDS_PATH = 'stopwords.txt'
 PAUSED = False
+
+RULES_PATH = 'rules.txt'
+
+# ХРАНЕНИЕ ПРАВИЛ БЕСЕДЫ
+def load_rules() -> str:
+    if not os.path.exists(RULES_PATH):
+        return "Правила чата ещё не установлены."
+    with open(RULES_PATH, 'r', encoding='utf-8') as f:
+        return f.read()
+
+def save_rules(text: str):
+    with open(RULES_PATH, 'w', encoding='utf-8') as f:
+        f.write(text.strip())
+
 
 
 # ─── ХРАНЕНИЕ СТОП-СЛОВ ──────────────────────────────────────────────────
@@ -48,54 +61,23 @@ def save_stopwords(words: list[str]):
 
 STOP_WORDS = load_stopwords()
 
+@dp.message(F.text.lower() == "что будет если ты не будешь работать?")
+async def funny_response(message: Message):
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return  # молча игнорим остальных
+
+    await message.reply("меня поругает мой хозяин, только не говорите ему когда я сломаюсь пж")
+
+@dp.message(F.text.lower() == "кто твой хозяин?")
+async def funny_response1(message: Message):
+    await message.reply("Мой хозян @Maga22804")
 
 
 
-# ─── СТОРЕДЖИ ДЛЯ КАПЧ ───────────────────────────────────────────────────
-# pending_captcha[(chat_id,user_id)] = (answer:int, kind:str)
-# kind: "join" или "test"
-pending_captcha: dict[tuple[int,int], tuple[int,str]] = {}
-# Когда истёк mute, следующая попытка требует капчи снова
-require_captcha_after_mute: set[tuple[int,int]] = set()
+pending_verification = {}  # (chat_id, user_id): message_id
 
-# ─── ПАРСЕЛЬ ДЛЯ ОГРАНИЧЕНИЙ ─────────────────────────────────────────────
-async def schedule_restrict_for_failed_captcha(chat_id: int, user_id: int):
-    # Дать 60 сек на ответ, иначе мьют на 5 мин
-    await asyncio.sleep(60)
-    key = (chat_id, user_id)
-    if key in pending_captcha and pending_captcha[key][1] == "join":
-        pending_captcha.pop(key, None)
-        # проверим, не админ ли
-        member = await bot.get_chat_member(chat_id, user_id)
-        if member.status not in ("creator", "administrator"):
-            # мутим на 5 минут
-            await bot.restrict_chat_member(
-                chat_id, user_id,
-                permissions=ChatPermissions(can_send_messages=False)
-            )
-            # после 5 мин размьют и поставят флаг на капчу
-            asyncio.create_task(schedule_auto_unmute_and_flag(chat_id, user_id))
 
-async def schedule_auto_unmute_and_flag(chat_id: int, user_id: int):
-    await asyncio.sleep(300)  # 5 минут
-    # размьючиваем
-    await bot.restrict_chat_member(
-        chat_id, user_id,
-        permissions=ChatPermissions(
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True
-        )
-    )
-    # на следующую попытку писать требуем капчу
-    require_captcha_after_mute.add((chat_id, user_id))
-    await bot.send_message(
-        chat_id,
-        f"<a href=\"tg://user?id={user_id}\">{user_id}</a>, прежде чем писать, решите капчу!",
-        parse_mode="HTML"
-    )
-    
 
 # ─── SQLITE: СИСТЕМА ВЫГОВОРОВ ───────────────────────────────────────────
 async def init_db():
@@ -153,6 +135,10 @@ async def cmd_resume(message: Message):
 
 @dp.message(Command("getid"))
 async def cmd_getid(message: Message):
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await message.answer("❗ Только админ может использовать эту команду.")
+    
     await message.answer(f"🆔 Chat ID: <code>{message.chat.id}</code>", parse_mode="HTML")
 
 
@@ -203,13 +189,14 @@ async def cmd_helpadmin(message: Message):
         "/warns — узнать свои выговоры\n"
         "/mute — замутить пользователя (ответом на сообщение)\n"
         "/unmute — размутить пользователя (ответом на сообщение)\n"
-        "/testcaptcha — запустить тест-капчу для любого\n"
         "/stoplist — показать стоп-слова\n"
         "/ping — проверить, что бот жив\n"
         "/kick — исключить без блокировки (можно снова пригласить)\n"
         "/ban — навсегда забанить (пермач)\n"
         "/addword — добавить слово в стоп-лист\n"
-        "/removeword — удалить слово с стоп-листа\n",
+        "/removeword — удалить слово с стоп-листа\n"
+        "/правила — показать правила установленные в беседе(для всех)\n" 
+        "/установить_правила — установить новые правила для беседы\n",
         parse_mode="HTML"
     )
 
@@ -271,7 +258,7 @@ async def cmd_kick(message: Message, command: CommandObject):
 
     try:
         await bot.ban_chat_member(message.chat.id, target.id)
-        await bot.unban_chat_member(message.chat.id, target.id)  # 👈 чтобы можно было вернуться
+        await bot.unban_chat_member(message.chat.id, target.id)  
         await message.answer(f"👢 {target.full_name} был исключён.")
     except Exception as e:
         await message.answer(f"⚠️ Не удалось кикнуть: {e}")
@@ -305,7 +292,29 @@ async def cmd_ban(message: Message, command: CommandObject):
 
 @dp.message(Command("ping"))
 async def cmd_ping(message: Message):
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await message.answer("❗ Только админ может использовать эту команду.")
+    
     await message.answer("Pong! 🤖")
+    
+    
+@dp.message(Command("правила"))
+async def cmd_rules(message: Message):
+    await message.answer(f"📋 <b>Правила чата:</b>\n\n{load_rules()}", parse_mode="HTML")
+
+@dp.message(Command("установить_правила"))
+async def cmd_set_rules(message: Message, command: CommandObject):
+    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in ("administrator", "creator"):
+        return await message.answer("❗ Только админ может менять правила.")
+
+    if not command.args:
+        return await message.answer("❗ Укажите новые правила. Пример:\n/установить_правила 1. Не спамить\n2. Не материться")
+
+    save_rules(command.args)
+    await message.answer("✅ Правила обновлены.")
+
 
 @dp.message(Command("stoplist"))
 async def cmd_stoplist(message: Message):
@@ -388,87 +397,145 @@ async def cmd_unmute(message: Message):
     await message.answer(f"✅ {target.full_name} размучен.")
 
     
-@dp.message(Command("testcaptcha"))
-async def cmd_testcaptcha(message: Message):
-    chat_id, user_id = message.chat.id, message.from_user.id
-    a, b = random.randint(1,9), random.randint(1,9)
-    pending_captcha[(chat_id, user_id)] = (a + b, "test")
-    await message.answer(f"🧮 Тест-капча: сколько будет {a} + {b}? (60 сек.)")
-    asyncio.create_task(schedule_restrict_for_failed_captcha(chat_id, user_id))
 
-# ─── НОВЫЕ УЧАСТНИКИ → СРАЗУ КАПЧА ───────────────────────────────────────
+# ─── НОВЫЕ УЧАСТНИКИ ───────────────────────────────────────
+
 @dp.message(F.new_chat_members)
-async def new_member_handler(message: types.Message):
+async def new_member_handler(message: Message):
     chat_id = message.chat.id
     for user in message.new_chat_members:
-        chat_id, user_id = message.chat.id, user.id
-        a, b = random.randint(1,9), random.randint(1,9)
-        pending_captcha[(chat_id, user_id)] = (a + b, "join")
-        await message.answer(f"🛡️ {user.full_name}, решите {a} + {b} = ? (60 сек.)")
-        asyncio.create_task(schedule_restrict_for_failed_captcha(chat_id, user_id))
+        user_id = user.id
 
-# ─── ПЕРВАЯ ПОПЫТКА ПОСЛЕ МУТА → КАПЧА ─────────────────────────────────
-@dp.message(lambda m: (m.chat.id, m.from_user.id) in require_captcha_after_mute)
-async def on_first_after_unmute(message: Message):
-    key = (message.chat.id, message.from_user.id)
-    require_captcha_after_mute.discard(key)
-    await message.delete()
-    a, b = random.randint(1,9), random.randint(1,9)
-    pending_captcha[key] = (a + b, "join")
-    await message.answer(f"🛡️ {message.from_user.full_name}, решите {a} + {b} = ? (60 сек.)")
-    asyncio.create_task(schedule_restrict_for_failed_captcha(message.chat.id, message.from_user.id))
+       
+        member = await bot.get_chat_member(chat_id, user_id)
+        if member.status in ("administrator", "creator"):
+            continue
 
-# ─── ОТЛОВ ОТВЕТОВ НА КАПЧУ ─────────────────────────────────────────────
-@dp.message(lambda m: (m.chat.id, m.from_user.id) in pending_captcha)
-async def catch_captcha_answer(message: Message):
-    key = (message.chat.id, message.from_user.id)
-    answer, kind = pending_captcha.pop(key)
-    nums = re.findall(r"\d+", message.text or "")
-    given = int(nums[0]) if nums else None
-
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status in ("creator", "administrator"):
-        return await message.answer("✅ Админ, проверка не нужна.")
-
-    if given == answer:
-        # если это initial join или first-after-mute, просто снимаем мут
+        
         await bot.restrict_chat_member(
-            message.chat.id, message.from_user.id,
-            permissions=ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True
-            )
-        )
-        await message.answer("✅ Капча пройдена, можете писать.")
-    else:
-        # ответ неверный → мут на 5 мин и флаг на капчу
-        await message.answer("❌ Неверный ответ, мут на 5 мин.")
-        await bot.restrict_chat_member(
-            message.chat.id, message.from_user.id,
+            chat_id, user_id,
             permissions=ChatPermissions(can_send_messages=False)
         )
-        asyncio.create_task(schedule_auto_unmute_and_flag(message.chat.id, message.from_user.id))
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="👤", callback_data=f"verify_{user_id}"),
+                InlineKeyboardButton(text="🤖", callback_data=f"robot_{user_id}")
+            ]
+        ])
+
+        msg = await message.answer(
+            f"Приветствую 👋 {user.full_name}, подтвердите, что вы человек, нажав кнопку ниже в течение 45 секунд.",
+            reply_markup=keyboard
+        )
+
+        pending_verification[(chat_id, user_id)] = msg.message_id
+        asyncio.create_task(kick_if_not_verified(chat_id, user_id))
+
+        
+async def kick_if_not_verified(chat_id: int, user_id: int):
+    await asyncio.sleep(45)
+    key = (chat_id, user_id)
+    if key in pending_verification:
+        msg_id = pending_verification.pop(key)
+        try:
+            await bot.ban_chat_member(chat_id, user_id)
+            await bot.unban_chat_member(chat_id, user_id)
+            await bot.delete_message(chat_id, msg_id)
+        except:
+            pass
+
+
+@dp.callback_query(F.data.startswith("verify_"))
+async def verify_user(callback: CallbackQuery):
+    user_id = int(callback.data.split("_")[1])
+    chat_id = callback.message.chat.id
+
+    if callback.from_user.id != user_id:
+        return await callback.answer("⛔ Сиди не рыпайся йоу, проверяю не тебя")
+
+    # Снимаем ограничение
+    await bot.restrict_chat_member(
+        chat_id, user_id,
+        permissions=ChatPermissions(
+            can_send_messages=True,
+            can_send_media_messages=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True
+        )
+    )
+
+    key = (chat_id, user_id)
+    if key in pending_verification:
+        msg_id = pending_verification.pop(key)
+        await bot.delete_message(chat_id, msg_id)
+
+    await callback.answer("✅ Вы подтвердили, что вы человек!")
+
+
+@dp.callback_query(F.data.startswith("robot_"))
+async def bot_click(callback: CallbackQuery):
+    user_id = int(callback.data.split("_")[1])
+    chat_id = callback.message.chat.id
+
+    if callback.from_user.id != user_id:
+        return await callback.answer("⛔ Ты не можешь это трогать, не ты на проверке.")
+
+    await callback.answer("🤖 Вы признались, что бот. Пока!")
+
+    await asyncio.sleep(5)  # Даём увидеть сообщение
+
+    # Удалим сообщение
+    key = (chat_id, user_id)
+    if key in pending_verification:
+        msg_id = pending_verification.pop(key)
+        try:
+            await bot.delete_message(chat_id, msg_id)
+        except:
+            pass
+
+    # Кик без бана
+    try:
+        await bot.ban_chat_member(chat_id, user_id)
+        await bot.unban_chat_member(chat_id, user_id)
+    except:
+        pass
+
 
 # ─── ОБЩИЙ ФИЛЬТР СТОП-СЛОВ ─────────────────────────────────────────────
 @dp.message(F.text, lambda m: not m.text.startswith("/"))
 async def filter_and_warn(message: Message):
+    
+    if message.date < BOT_START_TIME:
+        return 
+    
     text = message.text.lower()
     if any(w in text for w in STOP_WORDS):
         await message.delete()
         user_id = message.from_user.id
         warns = await add_warning(user_id)
 
-        if warns < 3:
-            return await message.answer(f"⚠️ {message.from_user.full_name}, стоп-слова — {warns}/3 выговоров.")
-        member = await bot.get_chat_member(message.chat.id, user_id)
-        if member.status in ("creator", "administrator"):
-            return await message.answer("🚫 Три выговора, но админа/владельца исключить нельзя.")
-        await message.answer(f"🚫 {message.from_user.full_name}, 3/3 — исключаю.")
-        await bot.ban_chat_member(message.chat.id, user_id)
-        await reset_warnings(user_id)
-
+        if warns == 1:
+            await message.answer(f"⚠️ {message.from_user.full_name}, стоп-слово! 1/3 предупреждений. Мут на 5 минут.")
+            await bot.restrict_chat_member(
+                message.chat.id, user_id,
+                permissions=ChatPermissions(can_send_messages=False),
+                until_date=types.datetime.datetime.now() + types.timedelta(minutes=5)
+            )
+        elif warns == 2:
+            await message.answer(f"⚠️ {message.from_user.full_name}, снова стоп-слово! 2/3 предупреждений. Мут на 15 минут.")
+            await bot.restrict_chat_member(
+                message.chat.id, user_id,
+                permissions=ChatPermissions(can_send_messages=False),
+                until_date=types.datetime.datetime.now() + types.timedelta(minutes=15)
+            )
+        elif warns >= 3:
+            member = await bot.get_chat_member(message.chat.id, user_id)
+            if member.status in ("creator", "administrator"):
+                return await message.answer("🚫 3/3, но админа/создателя кикнуть нельзя.")
+            await message.answer(f"🚫 {message.from_user.full_name}, 3/3 — исключаю из чата.")
+            await bot.ban_chat_member(message.chat.id, user_id)
+            await reset_warnings(user_id)
 
 # ─── СТАРТ БОТА ─────────────────────────────────────────────────────────
 async def main():

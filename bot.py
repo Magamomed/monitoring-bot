@@ -34,6 +34,9 @@ STOPWORDS_PATH = 'stopwords.txt'
 PAUSED = False
 
 RULES_PATH = 'rules.txt'
+ADMIN_USERNAMES = ["@scrmmzdk", "@Maga22804"]
+
+
 
 # ХРАНЕНИЕ ПРАВИЛ БЕСЕДЫ
 def load_rules() -> str:
@@ -400,142 +403,161 @@ async def cmd_unmute(message: Message):
 
 # ─── НОВЫЕ УЧАСТНИКИ ───────────────────────────────────────
 
-@dp.message(F.new_chat_members)
-async def new_member_handler(message: Message):
-    chat_id = message.chat.id
-    for user in message.new_chat_members:
-        user_id = user.id
+# @dp.message(F.new_chat_members)
+# async def new_member_handler(message: Message):
+#     chat_id = message.chat.id
+#     for user in message.new_chat_members:
+#         user_id = user.id
 
        
-        member = await bot.get_chat_member(chat_id, user_id)
-        if member.status in ("administrator", "creator"):
-            continue
+#         member = await bot.get_chat_member(chat_id, user_id)
+#         if member.status in ("administrator", "creator"):
+#             continue
 
         
-        await bot.restrict_chat_member(
-            chat_id, user_id,
-            permissions=ChatPermissions(can_send_messages=False)
-        )
+#         await bot.restrict_chat_member(
+#             chat_id, user_id,
+#             permissions=ChatPermissions(can_send_messages=False)
+#         )
 
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="👤", callback_data=f"verify_{user_id}"),
-                InlineKeyboardButton(text="🤖", callback_data=f"robot_{user_id}")
-            ]
-        ])
+#         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#             [
+#                 InlineKeyboardButton(text="👤", callback_data=f"verify_{user_id}"),
+#                 InlineKeyboardButton(text="🤖", callback_data=f"robot_{user_id}")
+#             ]
+#         ])
 
-        msg = await message.answer(
-            f"Приветствую 👋 {user.full_name}, подтвердите, что вы человек, нажав кнопку ниже в течение 45 секунд.",
-            reply_markup=keyboard
-        )
+#         msg = await message.answer(
+#             f"Приветствую 👋 {user.full_name}, подтвердите, что вы человек, нажав кнопку ниже в течение 45 секунд.",
+#             reply_markup=keyboard
+#         )
 
-        pending_verification[(chat_id, user_id)] = msg.message_id
-        asyncio.create_task(kick_if_not_verified(chat_id, user_id))
+#         pending_verification[(chat_id, user_id)] = msg.message_id
+#         asyncio.create_task(kick_if_not_verified(chat_id, user_id))
 
         
-async def kick_if_not_verified(chat_id: int, user_id: int):
-    await asyncio.sleep(45)
-    key = (chat_id, user_id)
-    if key in pending_verification:
-        msg_id = pending_verification.pop(key)
-        try:
-            await bot.ban_chat_member(chat_id, user_id)
-            await bot.unban_chat_member(chat_id, user_id)
-            await bot.delete_message(chat_id, msg_id)
-        except:
-            pass
+# async def kick_if_not_verified(chat_id: int, user_id: int):
+#     await asyncio.sleep(45)
+#     key = (chat_id, user_id)
+#     if key in pending_verification:
+#         msg_id = pending_verification.pop(key)
+#         try:
+#             await bot.ban_chat_member(chat_id, user_id)
+#             await bot.unban_chat_member(chat_id, user_id)
+#             await bot.delete_message(chat_id, msg_id)
+#         except:
+#             pass
 
 
-@dp.callback_query(F.data.startswith("verify_"))
-async def verify_user(callback: CallbackQuery):
-    user_id = int(callback.data.split("_")[1])
-    chat_id = callback.message.chat.id
+# @dp.callback_query(F.data.startswith("verify_"))
+# async def verify_user(callback: CallbackQuery):
+#     user_id = int(callback.data.split("_")[1])
+#     chat_id = callback.message.chat.id
 
-    if callback.from_user.id != user_id:
-        return await callback.answer("⛔ Сиди не рыпайся йоу, проверяю не тебя")
+#     if callback.from_user.id != user_id:
+#         return await callback.answer("⛔ Сиди не рыпайся йоу, проверяю не тебя")
 
-    # Снимаем ограничение
-    await bot.restrict_chat_member(
-        chat_id, user_id,
-        permissions=ChatPermissions(
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True
-        )
-    )
+    
+#     await bot.restrict_chat_member(
+#         chat_id, user_id,
+#         permissions=ChatPermissions(
+#             can_send_messages=True,
+#             can_send_media_messages=True,
+#             can_send_other_messages=True,
+#             can_add_web_page_previews=True
+#         )
+#     )
 
-    key = (chat_id, user_id)
-    if key in pending_verification:
-        msg_id = pending_verification.pop(key)
-        await bot.delete_message(chat_id, msg_id)
+#     key = (chat_id, user_id)
+#     if key in pending_verification:
+#         msg_id = pending_verification.pop(key)
+#         await bot.delete_message(chat_id, msg_id)
 
-    await callback.answer("✅ Вы подтвердили, что вы человек!")
+#     await callback.answer("✅ Вы подтвердили, что вы человек!")
 
 
-@dp.callback_query(F.data.startswith("robot_"))
-async def bot_click(callback: CallbackQuery):
-    user_id = int(callback.data.split("_")[1])
-    chat_id = callback.message.chat.id
+# @dp.callback_query(F.data.startswith("robot_"))
+# async def bot_click(callback: CallbackQuery):
+#     user_id = int(callback.data.split("_")[1])
+#     chat_id = callback.message.chat.id
 
-    if callback.from_user.id != user_id:
-        return await callback.answer("⛔ Ты не можешь это трогать, не ты на проверке.")
+#     if callback.from_user.id != user_id:
+#         return await callback.answer("⛔ Ты не можешь это трогать, не ты на проверке.")
 
-    await callback.answer("🤖 Вы признались, что бот. Пока!")
+#     await callback.answer("🤖 Вы признались, что бот. Пока!")
 
-    await asyncio.sleep(5)  # Даём увидеть сообщение
+#     await asyncio.sleep(5)  
 
-    # Удалим сообщение
-    key = (chat_id, user_id)
-    if key in pending_verification:
-        msg_id = pending_verification.pop(key)
-        try:
-            await bot.delete_message(chat_id, msg_id)
-        except:
-            pass
+    
+#     key = (chat_id, user_id)
+#     if key in pending_verification:
+#         msg_id = pending_verification.pop(key)
+#         try:
+#             await bot.delete_message(chat_id, msg_id)
+#         except:
+#             pass
 
-    # Кик без бана
-    try:
-        await bot.ban_chat_member(chat_id, user_id)
-        await bot.unban_chat_member(chat_id, user_id)
-    except:
-        pass
+    
+#     try:
+#         await bot.ban_chat_member(chat_id, user_id)
+#         await bot.unban_chat_member(chat_id, user_id)
+#     except:
+#         pass
 
 
 # ─── ОБЩИЙ ФИЛЬТР СТОП-СЛОВ ─────────────────────────────────────────────
 @dp.message(F.text, lambda m: not m.text.startswith("/"))
 async def filter_and_warn(message: Message):
-    
     if message.date < BOT_START_TIME:
-        return 
-    
+        return
+
     text = message.text.lower()
     if any(w in text for w in STOP_WORDS):
-        await message.delete()
+        try:
+            await message.delete()
+        except Exception as e:
+            print(f"❗ Не удалось удалить сообщение: {e}")
+
         user_id = message.from_user.id
         warns = await add_warning(user_id)
 
-        if warns == 1:
-            await message.answer(f"⚠️ {message.from_user.full_name}, стоп-слово! 1/3 предупреждений. Мут на 5 минут.")
-            await bot.restrict_chat_member(
-                message.chat.id, user_id,
-                permissions=ChatPermissions(can_send_messages=False),
-                until_date=types.datetime.datetime.now() + types.timedelta(minutes=5)
-            )
-        elif warns == 2:
-            await message.answer(f"⚠️ {message.from_user.full_name}, снова стоп-слово! 2/3 предупреждений. Мут на 15 минут.")
-            await bot.restrict_chat_member(
-                message.chat.id, user_id,
-                permissions=ChatPermissions(can_send_messages=False),
-                until_date=types.datetime.datetime.now() + types.timedelta(minutes=15)
-            )
-        elif warns >= 3:
-            member = await bot.get_chat_member(message.chat.id, user_id)
-            if member.status in ("creator", "administrator"):
-                return await message.answer("🚫 3/3, но админа/создателя кикнуть нельзя.")
-            await message.answer(f"🚫 {message.from_user.full_name}, 3/3 — исключаю из чата.")
-            await bot.ban_chat_member(message.chat.id, user_id)
-            await reset_warnings(user_id)
+        admins_text = ", ".join(ADMIN_USERNAMES)
+
+        await bot.send_message(
+            message.chat.id,
+            f"⚠️ Нарушение от {message.from_user.full_name} (@{message.from_user.username or 'нет ника'})\n"
+            f"{admins_text}, посмотрите пожалуйста.",
+            reply_to_message_id=message.message_id if message.message_id else None
+        )
+
+
+    # Когда будет доступ админа можно раскомитить
+    # if any(w in text for w in STOP_WORDS):
+    #     await message.delete()
+    #     user_id = message.from_user.id
+    #     warns = await add_warning(user_id)
+
+    #     if warns == 1:
+    #         await message.answer(f"⚠️ {message.from_user.full_name}, стоп-слово! 1/3 предупреждений. Мут на 5 минут.")
+    #         await bot.restrict_chat_member(
+    #             message.chat.id, user_id,
+    #             permissions=ChatPermissions(can_send_messages=False),
+    #             until_date=types.datetime.datetime.now() + types.timedelta(minutes=5)
+    #         )
+    #     elif warns == 2:
+    #         await message.answer(f"⚠️ {message.from_user.full_name}, снова стоп-слово! 2/3 предупреждений. Мут на 15 минут.")
+    #         await bot.restrict_chat_member(
+    #             message.chat.id, user_id,
+    #             permissions=ChatPermissions(can_send_messages=False),
+    #             until_date=types.datetime.datetime.now() + types.timedelta(minutes=15)
+    #         )
+    #     elif warns >= 3:
+    #         member = await bot.get_chat_member(message.chat.id, user_id)
+    #         if member.status in ("creator", "administrator"):
+    #             return await message.answer("🚫 3/3, но админа/создателя кикнуть нельзя.")
+    #         await message.answer(f"🚫 {message.from_user.full_name}, 3/3 — исключаю из чата.")
+    #         await bot.ban_chat_member(message.chat.id, user_id)
+    #         await reset_warnings(user_id)
 
 # ─── СТАРТ БОТА ─────────────────────────────────────────────────────────
 async def main():

@@ -15,6 +15,10 @@ from aiogram.types import ChatPermissions, Message, InlineKeyboardMarkup, Inline
 from PauseMiddleware import PauseMiddleware
 from datetime import datetime, timezone
 
+from functools import wraps
+from aiogram.types import Message
+
+
 # ─── ЗАГРУЗКА ТОКЕНА ─────────────────────────────────────────────────────
 load_dotenv()
 API_TOKEN = os.getenv("BOT_TOKEN")
@@ -35,7 +39,31 @@ PAUSED = False
 
 RULES_PATH = 'rules.txt'
 ADMIN_USERNAMES = ["@scrmmzdk", "@Maga22804"]
+SUPER_ADMINS = ["@Maga22804", "@scrmmzdk"]
 
+
+
+# Проверка: админ по статусу ИЛИ владелец по нику
+async def is_admin_user(message: Message) -> bool:
+    username = f"@{message.from_user.username}" if message.from_user.username else ""
+
+    try:
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status in ("administrator", "creator"):
+            return True
+    except:
+        pass
+
+    return username in ADMIN_USERNAMES
+
+# Декоратор
+def only_admin_or_owner(handler):
+    @wraps(handler)
+    async def wrapper(message: Message, *args, **kwargs):
+        if not await is_admin_user(message):
+            return await message.answer("❗ Только админ или владелец может использовать эту команду.")
+        return await handler(message, *args, **kwargs)
+    return wrapper
 
 
 # ХРАНЕНИЕ ПРАВИЛ БЕСЕДЫ
@@ -116,41 +144,30 @@ async def reset_warnings(user_id: int):
 
 # ─── КОМАНДЫ ─────────────────────────────────────────────────────────────
 @dp.message(Command("pause"))
+@only_admin_or_owner
 async def cmd_pause(message: Message):
     global PAUSED
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("❗ Только админ может приостановить бота.")
-    
     PAUSED = True
     await message.answer("🤖 Бот ушёл перекусить. Не шалите тут без меня!")
 
+
 @dp.message(Command("resume"))
+@only_admin_or_owner
 async def cmd_resume(message: Message):
     global PAUSED
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("❗ Только админ может вернуть бота.")
-
     PAUSED = False
     await message.answer("✅ Я снова в деле! Порядок в чате под контролем.")
 
 
 @dp.message(Command("getid"))
+@only_admin_or_owner
 async def cmd_getid(message: Message):
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("❗ Только админ может использовать эту команду.")
-    
     await message.answer(f"🆔 Chat ID: <code>{message.chat.id}</code>", parse_mode="HTML")
 
 
 @dp.message(Command("addword"))
+@only_admin_or_owner
 async def add_word(message: Message, command: CommandObject):
-    if message.chat.type != ChatType.PRIVATE:
-        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in ("administrator", "creator"):
-            return await message.answer("❗ Только админ может добавлять слова.")
     word = command.args.strip().lower()
     if not word:
         return await message.answer("❗ Укажите слово. Пример: /addword spam")
@@ -160,11 +177,8 @@ async def add_word(message: Message, command: CommandObject):
 
 
 @dp.message(Command("removeword"))
+@only_admin_or_owner
 async def remove_word(message: Message, command: CommandObject):
-    if message.chat.type != ChatType.PRIVATE:
-        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in ("administrator", "creator"):
-            return await message.answer("❗ Только админ может удалять слова.")
     word = command.args.strip().lower()
     if not word:
         return await message.answer("❗ Укажите слово. Пример: /removeword spam")
@@ -174,17 +188,81 @@ async def remove_word(message: Message, command: CommandObject):
         await message.answer(f"❌ Удалено слово: {word}")
     else:
         await message.answer(f"⚠️ Слово не найдено: {word}")
-      
         
+@dp.message(Command("removeadmin"))
+async def cmd_removeadmin(message: Message, command: CommandObject):
+    # Проверка: является ли супер-админом или админом чата
+    username = f"@{message.from_user.username}" if message.from_user.username else ""
+    try:
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        is_chat_admin = member.status in ("administrator", "creator")
+    except:
+        is_chat_admin = False
+
+    if username not in SUPER_ADMINS and not is_chat_admin:
+        return await message.answer("❗ Только супер-админы или админы чата могут снимать доступ.")
+
+    # Получаем ник, кого удалить
+    target_username = None
+
+    if message.reply_to_message:
+        user = message.reply_to_message.from_user
+        if user.username:
+            target_username = f"@{user.username}"
+        else:
+            return await message.answer("❗ У пользователя нет @username.")
+    elif command.args:
+        arg = command.args.strip()
+        target_username = arg if arg.startswith("@") else f"@{arg}"
+    else:
+        return await message.answer("❗ Укажите пользователя через @username или пересланное сообщение.")
+
+    if target_username not in ADMIN_USERNAMES:
+        return await message.answer(f"ℹ️ {target_username} не в списке админов.")
+
+    ADMIN_USERNAMES.remove(target_username)
+    await message.answer(f"✅ {target_username} удалён из списка админов.")
+
+        
+@dp.message(Command("addadmin"))
+@only_admin_or_owner
+async def cmd_addadmin(message: Message, command: CommandObject):
+    username = None
+
+    # 📌 Если команда вызвана как ответ на сообщение
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+        if target.username:
+            username = f"@{target.username}"
+        else:
+            return await message.answer("❗ У пользователя нет @username, не могу добавить.")
+    
+    # 📌 Если передан @ник в команде
+    elif command.args:
+        raw_username = command.args.strip()
+        if raw_username.startswith("@"):
+            username = raw_username
+        else:
+            username = f"@{raw_username}"
+    
+    # 🛑 Если ни то, ни другое — ошибка
+    else:
+        return await message.answer("❗ Укажите пользователя через @username или пересланное сообщение.")
+
+    # 📥 Добавляем в список (если ещё нет)
+    if username in ADMIN_USERNAMES:
+        return await message.answer(f"ℹ️ {username} уже в списке админов.")
+    
+    ADMIN_USERNAMES.append(username)
+    await message.answer(f"✅ {username} добавлен в список владельцев/админов.")
+
 @dp.message(Command("helpadmin"))
+@only_admin_or_owner
 async def cmd_helpadmin(message: Message):
     
     if message.chat.type == ChatType.PRIVATE:
         return await message.answer("❗️ Команда /helpadmin только в группе.")
     
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("⚠️ Только админы могут видеть список админ-команд.")
     await message.answer(
         "👮‍♂️ <b>Админ-команды:</b>\n\n"
         "/helpadmin — показать это сообщение\n"
@@ -205,13 +283,12 @@ async def cmd_helpadmin(message: Message):
 
 
 @dp.message(Command("mute"))
+@only_admin_or_owner
 async def cmd_mute(message: Message):
     if message.chat.type == ChatType.PRIVATE:
         return await message.answer("❗️ Используйте /mute в группе.")
 
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("⚠️ Только админы могут мутить пользователей.")
+    
 
     target = None
 
@@ -241,10 +318,8 @@ async def cmd_mute(message: Message):
 
     
 @dp.message(Command("kick"))
+@only_admin_or_owner
 async def cmd_kick(message: Message, command: CommandObject):
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("❗ Только админ может кикать.")
 
     target = None
     if message.reply_to_message:
@@ -268,10 +343,8 @@ async def cmd_kick(message: Message, command: CommandObject):
 
 
 @dp.message(Command("ban"))
+@only_admin_or_owner
 async def cmd_ban(message: Message, command: CommandObject):
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("❗ Только админ может банить.")
 
     target = None
     if message.reply_to_message:
@@ -294,11 +367,8 @@ async def cmd_ban(message: Message, command: CommandObject):
 
 
 @dp.message(Command("ping"))
+@only_admin_or_owner
 async def cmd_ping(message: Message):
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("❗ Только админ может использовать эту команду.")
-    
     await message.answer("Pong! 🤖")
     
     
@@ -307,11 +377,8 @@ async def cmd_rules(message: Message):
     await message.answer(f"📋 <b>Правила чата:</b>\n\n{load_rules()}", parse_mode="HTML")
 
 @dp.message(Command("установить_правила"))
+@only_admin_or_owner
 async def cmd_set_rules(message: Message, command: CommandObject):
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("❗ Только админ может менять правила.")
-
     if not command.args:
         return await message.answer("❗ Укажите новые правила. Пример:\n/установить_правила 1. Не спамить\n2. Не материться")
 
@@ -320,12 +387,8 @@ async def cmd_set_rules(message: Message, command: CommandObject):
 
 
 @dp.message(Command("stoplist"))
+@only_admin_or_owner
 async def cmd_stoplist(message: Message):
-    
-    if message.chat.type != ChatType.PRIVATE:
-        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in ("administrator", "creator"):
-            return await message.answer("⚠️ Только админы могут просматривать список стоп-слов.")
 
     stops = "\n".join(f"- {w}" for w in STOP_WORDS)
     
@@ -350,12 +413,11 @@ async def cmd_warns(message: Message):
     await message.answer(f"📝 У вас {warns}/3 выговоров.")
 
 @dp.message(Command("clearwarns"))
+@only_admin_or_owner
 async def cmd_clearwarns(message: Message):
     if message.chat.type == ChatType.PRIVATE:
         return await message.answer("Используйте в группе.")
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("Только админы.")
+    
     if not message.reply_to_message:
         return await message.answer("Ответьте на сообщение и введите /clearwarns")
     target = message.reply_to_message.from_user
@@ -365,13 +427,11 @@ async def cmd_clearwarns(message: Message):
 
 
 @dp.message(Command("unmute"))
+@only_admin_or_owner
 async def cmd_unmute(message: Message):
     if message.chat.type == ChatType.PRIVATE:
         return await message.answer("❗️ Используйте /unmute в группе.")
 
-    member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ("administrator", "creator"):
-        return await message.answer("⚠️ Только админы.")
 
     target = None
 

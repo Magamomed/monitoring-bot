@@ -6,7 +6,7 @@ import re
 
 from dotenv import load_dotenv
 import aiosqlite
-
+load_dotenv()
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command , CommandObject
 from aiogram.enums import ChatType
@@ -17,11 +17,23 @@ from datetime import datetime, timezone
 
 from functools import wraps
 from aiogram.types import Message
-
-
+import requests
+import os
 # ─── ЗАГРУЗКА ТОКЕНА ─────────────────────────────────────────────────────
-load_dotenv()
-API_TOKEN = os.getenv("BOT_TOKEN")
+
+API_TOKEN          = os.getenv("BOT_TOKEN")
+AZURE_OPENAI_ENDPOINT = os.getenv("OPENAI_API_BASE")
+AZURE_DEPLOYMENT_NAME = os.getenv("AZURE_DEPLOYMENT_NAME")
+AZURE_API_KEY = os.getenv("OPENAI_API_KEY")
+API_VERSION = os.getenv("OPENAI_API_VERSION")
+
+
+headers = {
+    "Content-Type": "application/json",
+    "api-key": AZURE_API_KEY,
+}
+
+
 if not API_TOKEN:
     raise RuntimeError("Не найден BOT_TOKEN в окружении")
 
@@ -36,11 +48,47 @@ BOT_START_TIME = datetime.now(timezone.utc)
 DB_PATH = 'warnings.db'
 STOPWORDS_PATH = 'stopwords.txt'
 PAUSED = False
+AI_ENABLED = True
+
 
 RULES_PATH = 'rules.txt'
 ADMIN_USERNAMES = ["@scrmmzdk", "@Maga22804"]
 SUPER_ADMINS = ["@Maga22804", "@scrmmzdk"]
 
+
+# AI bad content cheking
+
+async def is_bad_content(text: str) -> bool:
+    if not AI_ENABLED:
+        return False
+    url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_DEPLOYMENT_NAME}/chat/completions?api-version={API_VERSION}"
+
+    data = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a content moderation AI for a group chat. "
+                    "Only respond YES if the message contains serious hate speech, threats, discrimination, or explicit personal insults. "
+                    "Do NOT respond YES to emotional slang, surprise, mild swearing (e.g., 'ахуеть', 'бля', 'ебать', 'дурак', 'дебил', 'нигер', 'niger') unless it clearly attacks someone. "
+                    "Ignore sarcasm, jokes, memes, and expressive words used as exclamations. "
+                    "Reply only YES or NO."
+                )
+            },
+            {"role": "user", "content": text},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 1
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        answer = response.json()["choices"][0]["message"]["content"].strip().lower()
+        return answer.startswith("yes")
+    except Exception as e:
+        print("❗ is_bad_content failed:", e)
+        return False
 
 
 # Проверка: админ по статусу ИЛИ владелец по нику
@@ -222,6 +270,21 @@ async def cmd_removeadmin(message: Message, command: CommandObject):
 
     ADMIN_USERNAMES.remove(target_username)
     await message.answer(f"✅ {target_username} удалён из списка админов.")
+    
+@dp.message(Command("offai"))
+@only_admin_or_owner
+async def cmd_disable_ai(message: Message):
+    global AI_ENABLED
+    AI_ENABLED = False
+    await message.answer("❌ Проверка через AI отключена.")
+
+@dp.message(Command("onai"))
+@only_admin_or_owner
+async def cmd_enable_ai(message: Message):
+    global AI_ENABLED
+    AI_ENABLED = True
+    await message.answer("✅ Проверка через AI включена.")
+
 
         
 @dp.message(Command("addadmin"))
@@ -568,27 +631,33 @@ async def cmd_unmute(message: Message):
 # ─── ОБЩИЙ ФИЛЬТР СТОП-СЛОВ ─────────────────────────────────────────────
 @dp.message(F.text, lambda m: not m.text.startswith("/"))
 async def filter_and_warn(message: Message):
+    # игнорим старые сообщения
     if message.date < BOT_START_TIME:
         return
+    text = message.text.strip()
+    # 1) Проверка через GPT-4o
+    if await is_bad_content(text):
+        admins = ADMIN_USERNAMES  # замените на ваш список
+        mention = ", ".join(admins)
+        await message.reply(
+            f"⚠️ Обнаружено нежелательное содержание от {message.from_user.full_name}.\n"
+            f"{mention}, пожалуйста, проверьте."
+        )
+        return
 
-    text = message.text.lower()
+    # 2) Ваша локальная проверка стоп-слов
     if any(w in text for w in STOP_WORDS):
-        try:
-            await message.delete()
-        except Exception as e:
-            print(f"❗ Не удалось удалить сообщение: {e}")
-
         user_id = message.from_user.id
         warns = await add_warning(user_id)
 
         admins_text = ", ".join(ADMIN_USERNAMES)
-
         await bot.send_message(
             message.chat.id,
             f"⚠️ Нарушение от {message.from_user.full_name} (@{message.from_user.username or 'нет ника'})\n"
             f"{admins_text}, посмотрите пожалуйста.",
-            reply_to_message_id=message.message_id if message.message_id else None
+            reply_to_message_id=message.message_id
         )
+
 
 
     # Когда будет доступ админа можно раскомитить

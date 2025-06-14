@@ -70,10 +70,12 @@ async def is_bad_content(text: str) -> bool:
                 "role": "system",
                 "content": (
                     "You are a content moderation AI for a group chat. "
-                    "Reply YES only if the message includes serious hate speech, threats, discrimination, explicit personal insults, "
-                    "or rude mentions of family members (such as mother, father, parents) in an insulting context. "
-                    "Do NOT reply YES to mild slang, surprise, or emotional exclamations (like 'ахуеть', 'бля', 'ебать') "
-                    "unless they clearly contain a direct insult, threat, or attack on someone's family. "
+                    "Reply YES only if the message includes any of the following: "
+                    "1) serious hate speech, threats, discrimination, explicit personal insults, "
+                    "2) rude mentions of family members (such as mother, father, parents) in an insulting context, "
+                    "3) spam or messages offering easy money, investments, work-from-home, or fast profit schemes. "
+                    "Do NOT reply YES to mild slang, surprise, or emotional exclamations "
+                    "(like 'ахуеть', 'бля', 'ебать') unless they clearly contain an insult or threat. "
                     "Ignore jokes, sarcasm, memes, or cultural expressions. "
                     "Reply strictly with YES or NO."
                 )

@@ -61,6 +61,7 @@ SUPER_ADMINS = ["@Maga22804", "@scrmmzdk"]
 async def is_bad_content(text: str) -> bool:
     if not AI_ENABLED:
         return False
+
     url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_DEPLOYMENT_NAME}/chat/completions?api-version={API_VERSION}"
 
     data = {
@@ -69,10 +70,12 @@ async def is_bad_content(text: str) -> bool:
                 "role": "system",
                 "content": (
                     "You are a content moderation AI for a group chat. "
-                    "Only respond YES if the message contains serious hate speech, threats, discrimination, or explicit personal insults. "
-                    "Do NOT respond YES to emotional slang, surprise, mild swearing (e.g., 'ахуеть', 'бля', 'ебать', 'дурак', 'дебил', 'нигер', 'niger') unless it clearly attacks someone. "
-                    "Ignore sarcasm, jokes, memes, and expressive words used as exclamations. "
-                    "Reply only YES or NO."
+                    "Reply YES only if the message includes serious hate speech, threats, discrimination, explicit personal insults, "
+                    "or rude mentions of family members (such as mother, father, parents) in an insulting context. "
+                    "Do NOT reply YES to mild slang, surprise, or emotional exclamations (like 'ахуеть', 'бля', 'ебать') "
+                    "unless they clearly contain a direct insult, threat, or attack on someone's family. "
+                    "Ignore jokes, sarcasm, memes, or cultural expressions. "
+                    "Reply strictly with YES or NO."
                 )
             },
             {"role": "user", "content": text},
@@ -89,6 +92,7 @@ async def is_bad_content(text: str) -> bool:
     except Exception as e:
         print("❗ is_bad_content failed:", e)
         return False
+
 
 
 # Проверка: админ по статусу ИЛИ владелец по нику

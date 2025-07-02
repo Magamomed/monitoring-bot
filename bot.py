@@ -69,14 +69,19 @@ async def is_bad_content(text: str) -> bool:
             {
                 "role": "system",
                 "content": (
-                    "You are a content moderation AI for a group chat. "
-                    "Reply YES only if the message includes any of the following: "
-                    "1) serious hate speech, threats, discrimination, explicit personal insults, "
-                    "2) rude mentions of family members (such as mother, father, parents) in an insulting context, "
-                    "3) spam or messages offering easy money, investments, work-from-home, or fast profit schemes. "
-                    "Do NOT reply YES to mild slang, surprise, or emotional exclamations "
-                    "(like 'ахуеть', 'бля', 'ебать') unless they clearly contain an insult or threat. "
-                    "Ignore jokes, sarcasm, memes, or cultural expressions. "
+                    "You are a strict content moderation AI for a group chat. "
+                    "Reply YES only if the message includes any of the following:\n"
+                    "1) Hate speech, threats, or discriminatory remarks.\n"
+                    "2) Explicit personal insults, especially involving family members.\n"
+                    "3) SPAM or SCAMS, including messages about:\n"
+                    "   - Quick money (e.g. '7500₽ в день', 'easy income', 'без вложений')\n"
+                    "   - Work-from-home schemes\n"
+                    "   - Cryptocurrency or investments promising high returns\n"
+                    "   - Fake jobs or get-rich-quick offers\n"
+                    "   - Contact requests like '@username' with job/money offers\n"
+                    "   - Promises of income tied to age or minimal effort (e.g. '18+', 'без опыта')\n"
+                    "   - Messages with emotional triggers to lure users (e.g. 'не упусти шанс')\n\n"
+                    "Ignore jokes, memes, surprise expressions, and informal slang like 'бля', 'ахуеть' unless they contain clear threats or insults.\n"
                     "Reply strictly with YES or NO."
                 )
             },

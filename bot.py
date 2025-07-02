@@ -68,22 +68,20 @@ async def is_bad_content(text: str) -> bool:
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "You are a strict content moderation AI for a group chat. "
-                    "Reply YES only if the message includes any of the following:\n"
-                    "1) Hate speech, threats, or discriminatory remarks.\n"
-                    "2) Explicit personal insults, especially involving family members.\n"
-                    "3) SPAM or SCAMS, including messages about:\n"
-                    "   - Quick money (e.g. '7500₽ в день', 'easy income', 'без вложений')\n"
-                    "   - Work-from-home schemes\n"
-                    "   - Cryptocurrency or investments promising high returns\n"
-                    "   - Fake jobs or get-rich-quick offers\n"
-                    "   - Contact requests like '@username' with job/money offers\n"
-                    "   - Promises of income tied to age or minimal effort (e.g. '18+', 'без опыта')\n"
-                    "   - Messages with emotional triggers to lure users (e.g. 'не упусти шанс')\n\n"
-                    "Ignore jokes, memes, surprise expressions, and informal slang like 'бля', 'ахуеть' unless they contain clear threats or insults.\n"
-                    "Reply strictly with YES or NO."
-                )
+            "content": (
+                "You are a strict content moderation AI for a group chat.\n"
+                "Reply YES only if the message includes any of the following:\n"
+                "1. Hate speech, threats, or explicit insults (especially involving family).\n"
+                "2. Spam or scam content, such as:\n"
+                "- Messages about fast income, like '7500₽ в день', 'доход без вложений', 'работа 18+', 'заработай легко', etc.\n"
+                "- Messages asking to contact a user like '@karina_mladcha' for earnings or jobs.\n"
+                "- Investment promises, crypto scams, or work-from-phone offers.\n"
+                "- Anything that promises fast money or effortless work.\n"
+                "Always be cautious of messages with numbers and currency (e.g. '5000₽', '1000 руб') and contact requests.\n"
+                "Ignore harmless slang, memes, jokes, and emotional expressions.\n"
+                "Reply ONLY with YES or NO."
+            )
+
             },
             {"role": "user", "content": text},
         ],
@@ -647,14 +645,17 @@ async def filter_and_warn(message: Message):
         return
     text = message.text.strip()
     # 1) Проверка через GPT-4o
-    if await is_bad_content(text):
-        admins = ADMIN_USERNAMES  # замените на ваш список
-        mention = ", ".join(admins)
-        await message.reply(
-            f"⚠️ Обнаружено нежелательное содержание от {message.from_user.full_name}.\n"
-            f"{mention}, пожалуйста, проверьте."
-        )
-        return
+    for part in re.split(r'[.!?\n]', text):
+        part = part.strip()
+        if part and await is_bad_content(part):
+            admins = ADMIN_USERNAMES
+            mention = ", ".join(admins)
+            await message.reply(
+                f"⚠️ Обнаружено нежелательное содержание от {message.from_user.full_name}.\n"
+                f"{mention}, пожалуйста, проверьте."
+            )
+            return
+
 
     # 2) Ваша локальная проверка стоп-слов
     if any(w in text for w in STOP_WORDS):

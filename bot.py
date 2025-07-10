@@ -49,6 +49,8 @@ DB_PATH = 'warnings.db'
 STOPWORDS_PATH = 'stopwords.txt'
 PAUSED = False
 AI_ENABLED = True
+IMMUNE_USERS = set()
+
 
 
 RULES_PATH = 'rules.txt'
@@ -436,6 +438,25 @@ async def cmd_ban(message: Message, command: CommandObject):
         await message.answer(f"🔨 {target.full_name} получил пермач бан.")
     except Exception as e:
         await message.answer(f"⚠️ Не удалось забанить: {e}")
+        
+@dp.message(Command("god"))
+@only_admin_or_owner
+async def cmd_god(message: Message):
+    target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+    IMMUNE_USERS.add(target.id)
+    await message.answer(f"✨ Пользователь {target.full_name} получил иммунитет от фильтрации.")
+    
+@dp.message(Command("godoff"))
+@only_admin_or_owner
+async def cmd_godoff(message: Message):
+    target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+    if target.id in IMMUNE_USERS:
+        IMMUNE_USERS.remove(target.id)
+        await message.answer(f"🧯 Иммунитет с {target.full_name} снят.")
+    else:
+        await message.answer(f"ℹ️ У пользователя {target.full_name} не было иммунитета.")
+
+
 
 
 @dp.message(Command("ping"))
@@ -640,11 +661,14 @@ async def cmd_unmute(message: Message):
 # ─── ОБЩИЙ ФИЛЬТР СТОП-СЛОВ ─────────────────────────────────────────────
 @dp.message(F.text, lambda m: not m.text.startswith("/"))
 async def filter_and_warn(message: Message):
-    # игнорим старые сообщения
     if message.date < BOT_START_TIME:
         return
+
+    if message.from_user.id in IMMUNE_USERS:
+        return
+
     text = message.text.strip()
-    # 1) Проверка через GPT-4o
+
     for part in re.split(r'[.!?\n]', text):
         part = part.strip()
         if part and await is_bad_content(part):
@@ -656,8 +680,6 @@ async def filter_and_warn(message: Message):
             )
             return
 
-
-    # 2) Ваша локальная проверка стоп-слов
     if any(w in text for w in STOP_WORDS):
         user_id = message.from_user.id
         warns = await add_warning(user_id)

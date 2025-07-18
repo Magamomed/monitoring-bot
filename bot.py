@@ -58,7 +58,7 @@ ADMIN_USERNAMES = ["@scrmmzdk", "@Maga22804"]
 SUPER_ADMINS = ["@Maga22804", "@scrmmzdk"]
 
 
-# AI bad content cheking
+# AI 
 
 async def is_bad_content(text: str) -> bool:
     if not AI_ENABLED:
@@ -352,6 +352,10 @@ async def cmd_helpadmin(message: Message):
         "/removeword — удалить слово с стоп-листа\n"
         "/правила — показать правила установленные в беседе(для всех)\n" 
         "/установить_правила — установить новые правила для беседы\n",
+        "/god - иммунитет от фильтраций\n",
+        "/godoff - забрать иммунитет от фильтраций\n"
+        "/onai - Проверка через AI включена\n",
+        "/offai - Проверка через AI отключена\n",
         parse_mode="HTML"
     )
 

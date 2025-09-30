@@ -19,6 +19,17 @@ from filters.stopwords import STOP_WORDS, save_stopwords
 
 router = Router()
 
+@router.message(Command("adminlist"))
+@only_admin_or_owner
+async def cmd_adminlist(message: Message):
+    if not ADMIN_USERNAMES:
+        return await message.answer("👮‍♂️ Список админов пуст.")
+    text = "👮‍♂️ <b>Админы:</b>\n" + "\n".join(
+        f"- {username}" for username in ADMIN_USERNAMES
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
 @router.message(Command("pause"))
 @only_admin_or_owner
 async def cmd_pause(message: Message):
